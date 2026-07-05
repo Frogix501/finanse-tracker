@@ -1,0 +1,14 @@
+# Node / serwer
+node_modules/
+server/data/
+server/config.json
+
+# Mod / Gradle
+mod/.gradle/
+mod/build/
+mod/run/
+*.log
+
+# System
+.DS_Store
+Thumbs.db

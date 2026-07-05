@@ -1,0 +1,13 @@
+{
+  "name": "finanse-tracker-server",
+  "version": "1.0.0",
+  "description": "Backend + dashboard dla moda Finanse Tracker",
+  "type": "module",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

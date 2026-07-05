@@ -1,0 +1,13 @@
+# Render.com Blueprint - automatyczna konfiguracja.
+# Render przeczyta ten plik i sam ustawi serwis (nie musisz nic klikac recznie).
+services:
+  - type: web
+    name: finanse-tracker
+    runtime: node
+    rootDir: server        # kod serwera jest w podfolderze server/
+    plan: free
+    buildCommand: ""       # brak zaleznosci - nic nie trzeba budowac
+    startCommand: node server.js
+    envVars:
+      - key: FINANSE_API_KEY
+        generateValue: true   # Render wygeneruje losowy klucz API (podejrzysz go w zakladce Environment)

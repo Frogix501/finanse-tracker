@@ -1,0 +1,26 @@
+{
+  "schemaVersion": 1,
+  "id": "finanse_tracker",
+  "version": "${version}",
+  "name": "Finanse Tracker",
+  "description": "Czyta scoreboard (FINANSE) na serwerze i wysyla stan konta oraz zarobek na strone WWW.",
+  "authors": [
+    "AF Bots"
+  ],
+  "contact": {
+    "homepage": "https://rapy.gg"
+  },
+  "license": "MIT",
+  "environment": "client",
+  "entrypoints": {
+    "client": [
+      "gg.rapy.finanse.FinanseTrackerClient"
+    ]
+  },
+  "depends": {
+    "fabricloader": ">=0.19.0",
+    "minecraft": "~1.21.4",
+    "java": ">=21",
+    "fabric-api": "*"
+  }
+}

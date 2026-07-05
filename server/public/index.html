@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Finanse Tracker — rapy.gg</title>
+  <link rel="stylesheet" href="style.css" />
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@3.0.0/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
+</head>
+<body>
+  <div class="bg-grid"></div>
+
+  <header class="topbar">
+    <div class="brand">
+      <span class="logo">💰</span>
+      <div>
+        <h1>FINANSE TRACKER</h1>
+        <span class="sub">BOX PVP · rapy.gg</span>
+      </div>
+    </div>
+    <div class="status">
+      <span id="statusDot" class="dot off"></span>
+      <span id="statusText">łączenie…</span>
+      <button id="settingsBtn" class="icon-btn" title="Ustawienia">⚙</button>
+    </div>
+  </header>
+
+  <!-- Główny stan konta -->
+  <section class="hero">
+    <div class="hero-label">STAN KONTA</div>
+    <div class="hero-balance"><span id="balance">—</span></div>
+    <div class="hero-meta">
+      <span id="balanceFull">—</span>
+      <span class="sep">·</span>
+      <span id="playerName">—</span>
+      <span class="sep">·</span>
+      <span id="rawValue" class="raw">—</span>
+    </div>
+    <div id="gainFlash" class="gain-flash"></div>
+  </section>
+
+  <!-- Kafelki statystyk -->
+  <section class="stats">
+    <div class="stat">
+      <div class="stat-top"><span class="stat-ico">⚡</span> ZAROBEK / MIN</div>
+      <div class="stat-val" id="ratePerMin">—</div>
+      <div class="stat-sub" id="ratePerHour">—/h</div>
+    </div>
+    <div class="stat">
+      <div class="stat-top"><span class="stat-ico">📅</span> DZISIAJ</div>
+      <div class="stat-val" id="today">—</div>
+      <div class="stat-sub" id="todaySub">zarobek dzienny</div>
+    </div>
+    <div class="stat">
+      <div class="stat-top"><span class="stat-ico">🎮</span> TA SESJA</div>
+      <div class="stat-val" id="sessionProfit">—</div>
+      <div class="stat-sub" id="sessionSub">—</div>
+    </div>
+    <div class="stat">
+      <div class="stat-top"><span class="stat-ico">🚀</span> REKORD / MIN</div>
+      <div class="stat-val" id="bestRate">—</div>
+      <div class="stat-sub" id="peakBalance">szczyt: —</div>
+    </div>
+  </section>
+
+  <!-- Wykres stanu konta -->
+  <section class="card">
+    <div class="card-head">
+      <h2>Stan konta w czasie</h2>
+      <div class="range-btns" id="rangeBtns">
+        <button data-range="3600000">1h</button>
+        <button data-range="21600000">6h</button>
+        <button data-range="86400000" class="active">24h</button>
+        <button data-range="604800000">7d</button>
+        <button data-range="0">Całość</button>
+      </div>
+    </div>
+    <div class="chart-wrap"><canvas id="balanceChart"></canvas></div>
+  </section>
+
+  <div class="grid-2">
+    <!-- Zarobek na godzinę -->
+    <section class="card">
+      <div class="card-head">
+        <h2>Zarobek wg godziny (dziś)</h2>
+        <span class="hint" id="bestHourHint"></span>
+      </div>
+      <div class="chart-wrap sm"><canvas id="hourChart"></canvas></div>
+    </section>
+
+    <!-- Zarobek dzienny -->
+    <section class="card">
+      <div class="card-head">
+        <h2>Zarobek dzienny (14 dni)</h2>
+        <span class="hint" id="avgDayHint"></span>
+      </div>
+      <div class="chart-wrap sm"><canvas id="dayChart"></canvas></div>
+    </section>
+  </div>
+
+  <div class="grid-2">
+    <!-- Cel -->
+    <section class="card">
+      <div class="card-head"><h2>🎯 Cel</h2></div>
+      <div class="goal">
+        <div class="goal-input">
+          <input type="text" id="goalInput" placeholder="np. 1M, 500K, 2.5B" />
+          <button id="goalSet">Ustaw</button>
+          <button id="goalClear" class="ghost">✕</button>
+        </div>
+        <div class="progress"><div class="progress-bar" id="goalBar"></div></div>
+        <div class="goal-meta">
+          <span id="goalPct">—</span>
+          <span id="goalEta">—</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- Prognoza -->
+    <section class="card">
+      <div class="card-head"><h2>🔮 Prognoza (przy obecnym tempie)</h2></div>
+      <div class="forecast">
+        <div class="fc-row"><span>za 1 godzinę</span><b id="fc1h">—</b></div>
+        <div class="fc-row"><span>za 8 godzin</span><b id="fc8h">—</b></div>
+        <div class="fc-row"><span>do końca dnia</span><b id="fcEod">—</b></div>
+        <div class="fc-row"><span>za 24 godziny</span><b id="fc24h">—</b></div>
+      </div>
+    </section>
+  </div>
+
+  <footer class="foot">
+    Dane odświeżają się automatycznie · Finanse Tracker mod v1.0 ·
+    <span id="lastUpdate">—</span>
+  </footer>
+
+  <!-- Panel ustawień -->
+  <div id="settingsModal" class="modal hidden">
+    <div class="modal-box">
+      <h3>Ustawienia</h3>
+      <label>Adres API (puste = ten sam serwer)</label>
+      <input type="text" id="apiBase" placeholder="https://twoj-serwer.onrender.com" />
+      <label>Odświeżanie co (sekundy)</label>
+      <input type="number" id="refreshSec" min="1" max="60" value="3" />
+      <label class="checkbox">
+        <input type="checkbox" id="soundToggle" /> Dźwięk przy zarobku
+      </label>
+      <div class="modal-actions">
+        <button id="settingsSave">Zapisz</button>
+        <button id="settingsClose" class="ghost">Zamknij</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
