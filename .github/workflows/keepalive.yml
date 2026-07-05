@@ -1,0 +1,16 @@
+name: keep-alive
+
+# Pinguje serwer na Renderze co 10 minut, zeby darmowy plan nie usypial.
+# Dzieki temu strona otwiera sie od razu, bez czekania na "obudzenie".
+on:
+  schedule:
+    - cron: "*/10 * * * *"
+  workflow_dispatch: {}
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping health endpoint
+        run: |
+          curl -fsS --max-time 90 https://finanse-tracker.onrender.com/api/health || true
