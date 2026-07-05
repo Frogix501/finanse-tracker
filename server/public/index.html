@@ -43,26 +43,33 @@
   <!-- Kafelki statystyk -->
   <section class="stats">
     <div class="stat">
+      <button class="stat-reset" data-reset="rate" title="Resetuj tempo (nowa sesja)">↻</button>
       <div class="stat-top"><span class="stat-ico">⚡</span> ZAROBEK / MIN</div>
       <div class="stat-val" id="ratePerMin">—</div>
       <div class="stat-sub" id="ratePerHour">—/h</div>
     </div>
     <div class="stat">
+      <button class="stat-reset" data-reset="today" title="Resetuj dzienny zarobek">↻</button>
       <div class="stat-top"><span class="stat-ico">📅</span> DZISIAJ</div>
       <div class="stat-val" id="today">—</div>
       <div class="stat-sub" id="todaySub">zarobek dzienny</div>
     </div>
     <div class="stat">
+      <button class="stat-reset" data-reset="session" title="Resetuj tę sesję">↻</button>
       <div class="stat-top"><span class="stat-ico">🎮</span> TA SESJA</div>
       <div class="stat-val" id="sessionProfit">—</div>
       <div class="stat-sub" id="sessionSub">—</div>
     </div>
     <div class="stat">
+      <button class="stat-reset" data-reset="record" title="Resetuj rekord i szczyt">↻</button>
       <div class="stat-top"><span class="stat-ico">🚀</span> REKORD / MIN</div>
       <div class="stat-val" id="bestRate">—</div>
       <div class="stat-sub" id="peakBalance">szczyt: —</div>
     </div>
   </section>
+  <div class="stats-actions">
+    <button class="reset-all" data-reset="all">↻ Resetuj wszystkie boxy</button>
+  </div>
 
   <!-- Wykres stanu konta -->
   <section class="card">

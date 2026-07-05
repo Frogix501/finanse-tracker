@@ -11,6 +11,13 @@ let settings = {
 let goal = LS.get('ft_goal', null);
 let selectedRange = 86400000; // 24h
 
+// Stan boxow (kotwice do liczenia zarobku - resetowalne)
+let stat = {
+  session: LS.get('ft_session', null), // {t, v} - start biezacej sesji
+  day: LS.get('ft_day', null),         // {date, v} - poczatek dnia
+  record: LS.get('ft_record', null),   // {bestRate, peak}
+};
+
 // ---------- Formatowanie ----------
 function fmt(n) {
   if (n === null || n === undefined || !isFinite(n)) return '—';
@@ -58,6 +65,19 @@ function computeRate(points, windowMs = 300000) {
     const dtMin = (b.t - a.t) / 60000;
     return dtMin > 0 ? (b.v - a.v) / dtMin : 0;
   }
+  const a = win[0], b = win[win.length - 1];
+  const dtMin = (b.t - a.t) / 60000;
+  return dtMin > 0 ? (b.v - a.v) / dtMin : 0;
+}
+
+// tempo [na minutę] liczone TYLKO od momentu sinceT (start sesji)
+function rateWithin(points, sinceT, windowMs = 300000) {
+  const pts = points.filter(p => p.t >= sinceT);
+  if (pts.length < 2) return 0;
+  const last = pts[pts.length - 1].t;
+  const from = Math.max(sinceT, last - windowMs);
+  let win = pts.filter(p => p.t >= from);
+  if (win.length < 2) win = pts.slice(-2);
   const a = win[0], b = win[win.length - 1];
   const dtMin = (b.t - a.t) / 60000;
   return dtMin > 0 ? (b.v - a.v) / dtMin : 0;
@@ -256,28 +276,46 @@ async function refresh() {
     calcPoints.push({ t: latest.t, v: latest.v });
   }
 
-  // Tempo
-  const rate = computeRate(calcPoints);
+  const nowT = data.now || Date.now();
+
+  // === SESJA: auto-start gdy połączony, auto-reset do zera gdy mod się rozłączy ===
+  if (connected && current !== null) {
+    if (!stat.session) { stat.session = { t: nowT, v: current }; LS.set('ft_session', stat.session); }
+  } else if (stat.session) {
+    stat.session = null; LS.set('ft_session', null); // koniec połączenia -> sesja wyzerowana
+  }
+
+  // === TEMPO: liczone tylko w obrębie sesji; 0 gdy rozłączony (reset i start od nowa) ===
+  const rate = stat.session ? rateWithin(calcPoints, stat.session.t) : 0;
   document.getElementById('ratePerMin').textContent = fmtSigned(rate) + '$';
   document.getElementById('ratePerHour').textContent = fmtSigned(rate * 60) + '$/h';
 
-  // Dzisiaj
-  const today = sumGains(calcPoints, startOfToday(), Date.now());
-  document.getElementById('today').textContent = fmt(today) + '$';
+  // === DZISIAJ: kotwica dnia (auto-reset o północy, lub ręcznie) ===
+  const todayStr = new Date().toDateString();
+  if (current !== null && (!stat.day || stat.day.date !== todayStr)) {
+    stat.day = { date: todayStr, v: current };
+    LS.set('ft_day', stat.day);
+  }
+  const today = (current !== null && stat.day) ? current - stat.day.v : 0;
+  document.getElementById('today').textContent = fmtSigned(today) + '$';
 
-  // Sesja
-  const s = sessionInfo(calcPoints);
-  if (s) {
-    document.getElementById('sessionProfit').textContent = fmtSigned(s.profit) + '$';
+  // === TA SESJA (zysk + czas) ===
+  if (stat.session && current !== null) {
+    document.getElementById('sessionProfit').textContent = fmtSigned(current - stat.session.v) + '$';
     document.getElementById('sessionSub').textContent =
-      `${fmtDuration(s.duration)} · start ${fmt(s.startV)}`;
-    document.getElementById('bestRate').textContent = fmt(s.best) + '$';
+      `${fmtDuration(nowT - stat.session.t)} · start ${fmt(stat.session.v)}`;
+  } else {
+    document.getElementById('sessionProfit').textContent = '+0$';
+    document.getElementById('sessionSub').textContent = connected ? 'łączenie…' : 'brak połączenia z modem';
   }
 
-  // Rekord / szczyt
-  let peak = -Infinity;
-  for (const p of calcPoints) if (p.v > peak) peak = p.v;
-  document.getElementById('peakBalance').textContent = 'szczyt: ' + (isFinite(peak) ? fmt(peak) : '—');
+  // === REKORD / SZCZYT (resetowalne) ===
+  if (!stat.record) stat.record = { bestRate: 0, peak: (current ?? 0) };
+  if (current !== null && current > stat.record.peak) stat.record.peak = current;
+  if (rate > stat.record.bestRate) stat.record.bestRate = rate;
+  LS.set('ft_record', stat.record);
+  document.getElementById('bestRate').textContent = fmt(stat.record.bestRate) + '$';
+  document.getElementById('peakBalance').textContent = 'szczyt: ' + fmt(stat.record.peak);
 
   // Wykres stanu
   updateBalanceChart(calcPoints);
@@ -395,6 +433,28 @@ document.getElementById('goalSet').addEventListener('click', () => {
 document.getElementById('goalClear').addEventListener('click', () => {
   goal = null; LS.set('ft_goal', null); document.getElementById('goalInput').value = ''; refresh();
 });
+
+// Reset boxów
+document.querySelectorAll('[data-reset]').forEach(btn => {
+  btn.addEventListener('click', () => resetStat(btn.dataset.reset));
+});
+function resetStat(which) {
+  const cur = lastBalance;
+  const now = Date.now();
+  const newSession = () => (cur !== null ? { t: now, v: cur } : null);
+  const newDay = () => ({ date: new Date().toDateString(), v: cur ?? 0 });
+  const newRecord = () => ({ bestRate: 0, peak: cur ?? 0 });
+  if (which === 'session' || which === 'rate' || which === 'all') {
+    stat.session = newSession(); LS.set('ft_session', stat.session);
+  }
+  if (which === 'today' || which === 'all') {
+    stat.day = newDay(); LS.set('ft_day', stat.day);
+  }
+  if (which === 'record' || which === 'all') {
+    stat.record = newRecord(); LS.set('ft_record', stat.record);
+  }
+  refresh();
+}
 
 // Ustawienia modal
 const modal = document.getElementById('settingsModal');
