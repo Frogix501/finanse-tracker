@@ -37,8 +37,8 @@ function fmt(n) {
   return (neg ? '-' : '') + s;
 }
 function round(v) {
-  if (v >= 100) return Math.round(v).toString();
-  return (Math.round(v * 100) / 100).toString();
+  if (v >= 1000) return Math.round(v).toString();
+  return (Math.round(v * 100) / 100).toString(); // zachowaj grosze/2 miejsca (np. 380.66, 140.42K)
 }
 function fmtFull(n) {
   if (!isFinite(n)) return '—';
@@ -262,13 +262,15 @@ async function refresh() {
     return;
   }
 
-  // wielu graczy: przyjmij domyślnego gracza (pierwszy raz) i odśwież listę w selektorze
-  if (!currentPlayer && data.player) {
+  // wielu graczy: jeśli nie ma wybranego gracza LUB wybrany nie istnieje już na serwerze,
+  // przejdź na tego, którego zwrócił serwer (ostatnio aktywny) — self-heal starej zakładki
+  const playerNames = (data.players || []).map(p => p.name);
+  if ((!currentPlayer || !playerNames.includes(currentPlayer)) && data.player) {
     currentPlayer = data.player;
     LS.set('ft_player', currentPlayer);
     loadPlayerState();
   }
-  updatePlayerSelect(data.players || []);
+  updatePlayerTabs(data.players || []);
 
   const connected = data.connected;
   setStatus(connected, connected ? 'połączono z modem' : 'mod nieaktywny (brak danych)');
@@ -451,37 +453,51 @@ document.getElementById('goalClear').addEventListener('click', () => {
   goal = null; LS.set(pkey('ft_goal'), null); document.getElementById('goalInput').value = ''; refresh();
 });
 
-// przełącznik gracza
-function updatePlayerSelect(list) {
-  const sel = document.getElementById('playerSelect');
-  if (!sel) return;
+// zakładki graczy (klikasz nick — NIE przełącza się samo)
+function updatePlayerTabs(list) {
+  const wrap = document.getElementById('playerTabs');
+  if (!wrap) return;
   const names = list.map(p => p.name);
   if (currentPlayer && !names.includes(currentPlayer)) names.unshift(currentPlayer);
-  const sig = names.join('|');
-  if (sel.dataset.sig !== sig) {
-    sel.dataset.sig = sig;
-    sel.innerHTML = '';
-    if (names.length === 0) {
-      const o = document.createElement('option');
-      o.value = ''; o.textContent = '(brak graczy)';
-      sel.appendChild(o);
-    }
-    for (const n of names) {
-      const o = document.createElement('option');
-      o.value = n; o.textContent = n;
-      sel.appendChild(o);
-    }
+  // przebuduj tylko gdy zmienił się skład / status / wybrany gracz
+  const sig = names.map(n => {
+    const p = list.find(x => x.name === n);
+    return n + (p && p.connected ? '1' : '0');
+  }).join('|') + '::' + (currentPlayer || '');
+  if (wrap.dataset.sig === sig) return;
+  wrap.dataset.sig = sig;
+
+  wrap.innerHTML = '';
+  if (names.length === 0) {
+    const s = document.createElement('span');
+    s.className = 'tabs-empty';
+    s.textContent = 'Brak graczy — wejdź do gry z modem, a nick pojawi się tutaj';
+    wrap.appendChild(s);
+    return;
   }
-  sel.value = currentPlayer || (names[0] || '');
+  for (const n of names) {
+    const p = list.find(x => x.name === n);
+    const btn = document.createElement('button');
+    btn.className = 'player-tab' + (n === currentPlayer ? ' active' : '');
+    const dot = document.createElement('span');
+    dot.className = 'tab-dot' + (p && p.connected ? ' on' : '');
+    btn.appendChild(dot);
+    btn.appendChild(document.createTextNode(n));
+    btn.addEventListener('click', () => switchPlayer(n));
+    wrap.appendChild(btn);
+  }
 }
 
-document.getElementById('playerSelect').addEventListener('change', (e) => {
-  currentPlayer = e.target.value || null;
+function switchPlayer(name) {
+  if (!name || name === currentPlayer) return;
+  currentPlayer = name;
   LS.set('ft_player', currentPlayer);
   loadPlayerState();
   displayedBalance = null; lastBalance = null; // nie animuj między graczami
+  document.querySelectorAll('.player-tab').forEach(b =>
+    b.classList.toggle('active', b.textContent.trim() === name));
   refresh();
-});
+}
 
 // Reset boxów
 document.querySelectorAll('[data-reset]').forEach(btn => {
