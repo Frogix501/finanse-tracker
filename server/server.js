@@ -44,16 +44,23 @@ function loadConfig() {
 }
 const CONFIG = loadConfig();
 
-// ---------- Historia ----------
-let history = { points: [], latest: null };
+// ---------- Historia (wielu graczy) ----------
+// Struktura: { players: { "<nick>": { points: [{t,v}], latest: {t,v,p,raw} } } }
+let db = { players: {} };
 try {
   if (fs.existsSync(HISTORY_FILE)) {
-    history = JSON.parse(fs.readFileSync(HISTORY_FILE, 'utf8'));
-    if (!Array.isArray(history.points)) history.points = [];
+    const raw = JSON.parse(fs.readFileSync(HISTORY_FILE, 'utf8'));
+    if (raw && raw.players) {
+      db = raw;
+    } else if (raw && Array.isArray(raw.points)) {
+      // migracja ze starego formatu (jeden gracz) na nowy
+      const name = (raw.latest && raw.latest.p) || 'gracz';
+      db = { players: { [name]: { points: raw.points, latest: raw.latest || null } } };
+    }
   }
 } catch (e) {
   console.error('[history] blad odczytu, zaczynam od zera:', e.message);
-  history = { points: [], latest: null };
+  db = { players: {} };
 }
 
 let writeTimer = null;
@@ -62,39 +69,59 @@ function scheduleSave() {
   writeTimer = setTimeout(() => {
     writeTimer = null;
     try {
-      fs.writeFileSync(HISTORY_FILE, JSON.stringify(history));
+      fs.writeFileSync(HISTORY_FILE, JSON.stringify(db));
     } catch (e) {
       console.error('[history] blad zapisu:', e.message);
     }
   }, 3000);
 }
 
-function prune() {
+function prune(p) {
   const cutoff = Date.now() - CONFIG.retainDays * 86400_000;
-  if (history.points.length && history.points[0].t < cutoff) {
-    history.points = history.points.filter((p) => p.t >= cutoff);
+  if (p.points.length && p.points[0].t < cutoff) {
+    p.points = p.points.filter((x) => x.t >= cutoff);
   }
-  // twardy limit, zeby plik nie rosl w nieskonczonosc
   const MAX = 200_000;
-  if (history.points.length > MAX) {
-    history.points = history.points.slice(history.points.length - MAX);
+  if (p.points.length > MAX) {
+    p.points = p.points.slice(p.points.length - MAX);
   }
+}
+
+function cleanName(s) {
+  if (typeof s !== 'string') return 'gracz';
+  const n = s.trim().slice(0, 32);
+  return n || 'gracz';
 }
 
 function addPoint(value, raw, player) {
   const now = Date.now();
-  const point = { t: now, v: value, p: player || null, raw: raw || null };
-  history.latest = point;
+  const name = cleanName(player);
+  let p = db.players[name];
+  if (!p) { p = { points: [], latest: null }; db.players[name] = p; }
 
-  const last = history.points[history.points.length - 1];
-  // zapisuj gdy wartosc sie zmienila albo minela minuta (rzadziej = mniejszy plik)
+  p.latest = { t: now, v: value, p: name, raw: raw || null };
+  const last = p.points[p.points.length - 1];
   if (!last || last.v !== value || now - last.t >= 60_000) {
-    history.points.push({ t: now, v: value });
-    prune();
-    scheduleSave();
-  } else {
-    scheduleSave();
+    p.points.push({ t: now, v: value });
+    prune(p);
   }
+  scheduleSave();
+}
+
+function isConn(p, now) {
+  return !!(p && p.latest && (now - p.latest.t) < 30_000);
+}
+
+// lista graczy posortowana wg ostatniej aktywnosci
+function playerList(now) {
+  return Object.entries(db.players)
+    .map(([name, p]) => ({
+      name,
+      lastTs: p.latest ? p.latest.t : 0,
+      value: p.latest ? p.latest.v : null,
+      connected: isConn(p, now),
+    }))
+    .sort((a, b) => b.lastTs - a.lastTs);
 }
 
 // ---------- HTTP ----------
@@ -173,24 +200,38 @@ const server = http.createServer(async (req, res) => {
     }
     const value = Number(body.value);
     if (!isFinite(value)) return sendJson(res, 400, { ok: false, error: 'brak/zla wartosc' });
-    addPoint(value, typeof body.raw === 'string' ? body.raw.slice(0, 80) : null,
-             typeof body.player === 'string' ? body.player.slice(0, 32) : null);
+    addPoint(value, typeof body.raw === 'string' ? body.raw.slice(0, 80) : null, body.player);
     return sendJson(res, 200, { ok: true });
+  }
+
+  if (url === '/api/players' && req.method === 'GET') {
+    return sendJson(res, 200, { players: playerList(Date.now()) });
   }
 
   if (url === '/api/data' && req.method === 'GET') {
     const now = Date.now();
-    const connected = history.latest && (now - history.latest.t) < 30_000;
+    const q = new URL(req.url, 'http://x').searchParams;
+    let name = q.get('player');
+    let p = name ? db.players[name] : null;
+    // brak/nieznany gracz -> wybierz ostatnio aktywnego
+    if (!p) {
+      const list = playerList(now);
+      name = list.length ? list[0].name : null;
+      p = name ? db.players[name] : null;
+    }
     return sendJson(res, 200, {
       now,
-      connected: !!connected,
-      latest: history.latest,
-      points: history.points,
+      player: name,
+      connected: isConn(p, now),
+      latest: p ? p.latest : null,
+      points: p ? p.points : [],
+      players: playerList(now),
     });
   }
 
   if (url === '/api/health') {
-    return sendJson(res, 200, { ok: true, points: history.points.length });
+    const total = Object.values(db.players).reduce((s, p) => s + p.points.length, 0);
+    return sendJson(res, 200, { ok: true, players: Object.keys(db.players).length, points: total });
   }
 
   if (req.method === 'GET') return serveStatic(req, res);

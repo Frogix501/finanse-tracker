@@ -57,6 +57,12 @@ body > * { position: relative; z-index: 1; }
 .dot.off { background: var(--red); box-shadow: 0 0 10px var(--red); }
 @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: .4; } }
 
+.player-select {
+  background: var(--panel); border: 1px solid var(--border); color: var(--text);
+  border-radius: 8px; padding: 6px 10px; font-size: 13px; cursor: pointer; max-width: 160px;
+  font-family: var(--mono);
+}
+.player-select:hover { border-color: var(--purple); }
 .icon-btn {
   background: var(--panel); border: 1px solid var(--border); color: var(--text);
   border-radius: 8px; width: 32px; height: 32px; cursor: pointer; font-size: 16px;

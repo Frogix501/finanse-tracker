@@ -8,15 +8,22 @@ let settings = {
   refreshSec: LS.get('ft_refreshSec', 3),
   sound: LS.get('ft_sound', false),
 };
-let goal = LS.get('ft_goal', null);
 let selectedRange = 86400000; // 24h
 
-// Stan boxow (kotwice do liczenia zarobku - resetowalne)
-let stat = {
-  session: LS.get('ft_session', null), // {t, v} - start biezacej sesji
-  day: LS.get('ft_day', null),         // {date, v} - poczatek dnia
-  record: LS.get('ft_record', null),   // {bestRate, peak}
-};
+// Wielu graczy: cel + kotwice boxow trzymane OSOBNO dla kazdego nicku
+let currentPlayer = LS.get('ft_player', null);
+let goal = null;
+let stat = { session: null, day: null, record: null };
+
+function pkey(base) { return base + '::' + (currentPlayer || '_'); }
+function loadPlayerState() {
+  goal = LS.get(pkey('ft_goal'), null);
+  stat.session = LS.get(pkey('ft_session'), null);
+  stat.day = LS.get(pkey('ft_day'), null);
+  stat.record = LS.get(pkey('ft_record'), null);
+  const gi = document.getElementById('goalInput');
+  if (gi) gi.value = goal ? fmt(goal) : '';
+}
 
 // ---------- Formatowanie ----------
 function fmt(n) {
@@ -246,12 +253,22 @@ let lastBalance = null;
 async function refresh() {
   let data;
   try {
-    const res = await fetch(settings.apiBase + '/api/data', { cache: 'no-store' });
+    const purl = settings.apiBase + '/api/data'
+      + (currentPlayer ? '?player=' + encodeURIComponent(currentPlayer) : '');
+    const res = await fetch(purl, { cache: 'no-store' });
     data = await res.json();
   } catch (e) {
     setStatus(false, 'brak połączenia z serwerem');
     return;
   }
+
+  // wielu graczy: przyjmij domyślnego gracza (pierwszy raz) i odśwież listę w selektorze
+  if (!currentPlayer && data.player) {
+    currentPlayer = data.player;
+    LS.set('ft_player', currentPlayer);
+    loadPlayerState();
+  }
+  updatePlayerSelect(data.players || []);
 
   const connected = data.connected;
   setStatus(connected, connected ? 'połączono z modem' : 'mod nieaktywny (brak danych)');
@@ -280,9 +297,9 @@ async function refresh() {
 
   // === SESJA: auto-start gdy połączony, auto-reset do zera gdy mod się rozłączy ===
   if (connected && current !== null) {
-    if (!stat.session) { stat.session = { t: nowT, v: current }; LS.set('ft_session', stat.session); }
+    if (!stat.session) { stat.session = { t: nowT, v: current }; LS.set(pkey('ft_session'), stat.session); }
   } else if (stat.session) {
-    stat.session = null; LS.set('ft_session', null); // koniec połączenia -> sesja wyzerowana
+    stat.session = null; LS.set(pkey('ft_session'), null); // koniec połączenia -> sesja wyzerowana
   }
 
   // === TEMPO: liczone tylko w obrębie sesji; 0 gdy rozłączony (reset i start od nowa) ===
@@ -294,7 +311,7 @@ async function refresh() {
   const todayStr = new Date().toDateString();
   if (current !== null && (!stat.day || stat.day.date !== todayStr)) {
     stat.day = { date: todayStr, v: current };
-    LS.set('ft_day', stat.day);
+    LS.set(pkey('ft_day'), stat.day);
   }
   const today = (current !== null && stat.day) ? current - stat.day.v : 0;
   document.getElementById('today').textContent = fmtSigned(today) + '$';
@@ -313,7 +330,7 @@ async function refresh() {
   if (!stat.record) stat.record = { bestRate: 0, peak: (current ?? 0) };
   if (current !== null && current > stat.record.peak) stat.record.peak = current;
   if (rate > stat.record.bestRate) stat.record.bestRate = rate;
-  LS.set('ft_record', stat.record);
+  LS.set(pkey('ft_record'), stat.record);
   document.getElementById('bestRate').textContent = fmt(stat.record.bestRate) + '$';
   document.getElementById('peakBalance').textContent = 'szczyt: ' + fmt(stat.record.peak);
 
@@ -428,10 +445,42 @@ document.getElementById('rangeBtns').addEventListener('click', (e) => {
 
 document.getElementById('goalSet').addEventListener('click', () => {
   const v = parseAmount(document.getElementById('goalInput').value);
-  if (v) { goal = v; LS.set('ft_goal', goal); refresh(); }
+  if (v) { goal = v; LS.set(pkey('ft_goal'), goal); refresh(); }
 });
 document.getElementById('goalClear').addEventListener('click', () => {
-  goal = null; LS.set('ft_goal', null); document.getElementById('goalInput').value = ''; refresh();
+  goal = null; LS.set(pkey('ft_goal'), null); document.getElementById('goalInput').value = ''; refresh();
+});
+
+// przełącznik gracza
+function updatePlayerSelect(list) {
+  const sel = document.getElementById('playerSelect');
+  if (!sel) return;
+  const names = list.map(p => p.name);
+  if (currentPlayer && !names.includes(currentPlayer)) names.unshift(currentPlayer);
+  const sig = names.join('|');
+  if (sel.dataset.sig !== sig) {
+    sel.dataset.sig = sig;
+    sel.innerHTML = '';
+    if (names.length === 0) {
+      const o = document.createElement('option');
+      o.value = ''; o.textContent = '(brak graczy)';
+      sel.appendChild(o);
+    }
+    for (const n of names) {
+      const o = document.createElement('option');
+      o.value = n; o.textContent = n;
+      sel.appendChild(o);
+    }
+  }
+  sel.value = currentPlayer || (names[0] || '');
+}
+
+document.getElementById('playerSelect').addEventListener('change', (e) => {
+  currentPlayer = e.target.value || null;
+  LS.set('ft_player', currentPlayer);
+  loadPlayerState();
+  displayedBalance = null; lastBalance = null; // nie animuj między graczami
+  refresh();
 });
 
 // Reset boxów
@@ -445,13 +494,13 @@ function resetStat(which) {
   const newDay = () => ({ date: new Date().toDateString(), v: cur ?? 0 });
   const newRecord = () => ({ bestRate: 0, peak: cur ?? 0 });
   if (which === 'session' || which === 'rate' || which === 'all') {
-    stat.session = newSession(); LS.set('ft_session', stat.session);
+    stat.session = newSession(); LS.set(pkey('ft_session'), stat.session);
   }
   if (which === 'today' || which === 'all') {
-    stat.day = newDay(); LS.set('ft_day', stat.day);
+    stat.day = newDay(); LS.set(pkey('ft_day'), stat.day);
   }
   if (which === 'record' || which === 'all') {
-    stat.record = newRecord(); LS.set('ft_record', stat.record);
+    stat.record = newRecord(); LS.set(pkey('ft_record'), stat.record);
   }
   refresh();
 }
@@ -484,6 +533,6 @@ function restartLoop() {
 }
 
 initCharts();
-if (goal) document.getElementById('goalInput').value = fmt(goal);
+loadPlayerState();
 refresh();
 restartLoop();

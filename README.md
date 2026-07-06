@@ -137,6 +137,15 @@ edytować ręcznie.
 - **⚙ Ustawienia** — adres API (gdy strona hostowana osobno), częstotliwość odświeżania,
   dźwięk przy zarobku.
 
+## Wielu graczy (jedna strona, osobne konta)
+
+Serwer obsługuje wielu graczy naraz — dane są rozdzielane po **nicku** (mod wysyła nick
+automatycznie z gry). Kolega nie musi nic stawiać: instaluje tego samego moda, wpisuje
+**TEN SAM adres** endpointu i klucz API, wchodzi do gry — i pojawia się na liście.
+
+Na dashboardzie w prawym górnym rogu jest **przełącznik gracza** — wybierasz nick i widzisz
+jego stan konta, wykresy oraz osobne (per gracz) cele i resety boxów.
+
 ## Rozwiązywanie problemów
 
 - **Panel pokazuje „Serwer: BRAK"** — zły adres/endpoint lub serwer nie działa. Sprawdź
